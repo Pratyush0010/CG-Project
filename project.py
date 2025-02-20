@@ -6,38 +6,47 @@ import random
 pygame.init()
 
 # Set up the display
-WIDTH, HEIGHT = 800, 600
+WIDTH, HEIGHT = 800, 800
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Color Change Game")
+pygame.display.set_caption("Jumping Ball Game")
 
 # Colors
-COLORS = [(255, 0, 0), (0, 0, 255), (255, 255, 0), (0, 255, 0), 
-          (255, 255, 255), (128, 0, 128), (0, 255, 255)]
-
 WHITE = (255, 255, 255)
+BACKGROUND = (10, 10, 40)  # Dark blue night sky
+GREEN = (34, 139, 34)  # Green color for ground
+ORANGE = (255, 165, 0)  # Orange for the ball
+GREY = (169, 169, 169)  # Grey for obstacles
+
+# Generate random stars
+NUM_STARS = 100
+stars = [(random.randint(0, WIDTH), random.randint(0, HEIGHT // 2)) for _ in range(NUM_STARS)]
 
 # Font setup
 font = pygame.font.Font(None, 36)
 
-# Function to draw text
 def draw_text(text, x, y, color=WHITE):
     text_surface = font.render(text, True, color)
     screen.blit(text_surface, (x, y))
 
-# Function to get a random color
-def get_random_color():
-    return random.choice(COLORS)
+def draw_dda_line(x1, y1, x2, y2, color):
+    """Draws a line using the DDA algorithm."""
+    dx = x2 - x1
+    dy = y2 - y1
+    steps = max(abs(dx), abs(dy))
+    x_increment = dx / steps
+    y_increment = dy / steps
+    x, y = x1, y1
+    for _ in range(steps + 1):
+        screen.set_at((int(x), int(y)), color)
+        x += x_increment
+        y += y_increment
 
-# Function to get a random position for the box
-def get_random_position():
-    return random.randint(100, WIDTH - 200), random.randint(100, HEIGHT - 200)
+def draw_ground():
+    """Draws the ground using DDA lines."""
+    ground_height = HEIGHT // 4  # Adjusted ground height
+    for y in range(HEIGHT - ground_height, HEIGHT):
+        draw_dda_line(0, y, WIDTH, y, GREEN)
 
-# Function to check if the box is touching a corner
-def is_touching_corner(x, y):
-    return (x <= 0 and y <= 0) or (x + 150 >= WIDTH and y <= 0) or \
-           (x <= 0 and y + 150 >= HEIGHT) or (x + 150 >= WIDTH and y + 150 >= HEIGHT)
-
-# Function to wait for Enter key before starting
 def wait_for_enter():
     waiting = True
     while waiting:
@@ -52,71 +61,97 @@ def wait_for_enter():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:  # Enter key
                 waiting = False  # Exit loop when Enter is pressed
 
-# Main loop
 def main():
-    color = get_random_color()
-    x, y = get_random_position()
+    clock = pygame.time.Clock()
+    ball_x, ball_y = 100, HEIGHT - HEIGHT // 4 - 30
+    ball_radius = 20
+    ball_velocity_y = 0
+    gravity = 2  # Increased initial gravity
+    jump_strength = -15
+    obstacles = []
+    obstacle_width = 40
+    obstacle_height = 60
+    obstacle_speed = 8  # Increased initial speed
+    spawn_timer = 0
     score = 0
-    last_color_change_time = pygame.time.get_ticks()
-    color_change_count = 0  # Count how many times color changes
     game_over = False
 
-    while not game_over:
-        screen.fill((0, 0, 0))  # Background color
+    start_ticks = pygame.time.get_ticks()  # Start time tracking
 
+    while not game_over:
+        screen.fill(BACKGROUND)  # Clear the screen with the night sky color
+
+        # Update score based on time survived
+        score = (pygame.time.get_ticks() - start_ticks) // 1000  
+
+        # Increase obstacle speed and gravity over time
+        obstacle_speed = 8 + (score // 5)  
+        gravity = 2 + (score // 10)  
+
+        # Draw stars (twinkling effect)
+        for star in stars:
+            brightness = random.randint(150, 255)  # Make stars flicker
+            screen.set_at(star, (brightness, brightness, brightness))
+        
+        # Draw the moon (filled with white color)
+        pygame.draw.circle(screen, WHITE, (WIDTH - 150, 150), 60)
+        
+        # Draw the ground
+        draw_ground()
+        
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    ball_velocity_y = jump_strength
+        
+        # Update ball movement
+        ball_velocity_y += gravity
+        ball_y += ball_velocity_y
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                # End game if pressing space when box is touching a corner
-                if is_touching_corner(x, y):
-                    game_over = True
-                else:
-                    color = get_random_color()
-                    color_change_count += 1
-                    score += 1
-                    last_color_change_time = pygame.time.get_ticks()
-                    
-                    # Move box randomly, but place in a corner every 8th change
-                    if color_change_count % 8 == 0:
-                        corners = [(0, 0), (WIDTH - 150, 0), (0, HEIGHT - 150), (WIDTH - 150, HEIGHT - 150)]
-                        x, y = random.choice(corners)
-                    else:
-                        x, y = get_random_position()
-
-        # Automatically change color every 5 seconds
-        if pygame.time.get_ticks() - last_color_change_time > 5000:
-            color = get_random_color()
-            color_change_count += 1
-            last_color_change_time = pygame.time.get_ticks()
+        # Prevent ball from going below the ground
+        if ball_y > HEIGHT - HEIGHT // 4 - ball_radius:
+            ball_y = HEIGHT - HEIGHT // 4 - ball_radius
+            ball_velocity_y = 0
+        
+        # Draw the ball
+        pygame.draw.circle(screen, ORANGE, (ball_x, int(ball_y)), ball_radius)
+        
+        # Spawn obstacles
+        if spawn_timer % 100 == 0:
+            obstacles.append([WIDTH, HEIGHT - HEIGHT // 4 - obstacle_height])
+        spawn_timer += 1
+        
+        # Move and draw obstacles
+        for obs in obstacles[:]:
+            obs[0] -= obstacle_speed
+            pygame.draw.rect(screen, GREY, (obs[0], obs[1], obstacle_width, obstacle_height))  # Filled grey rectangle
+            draw_dda_line(obs[0], obs[1], obs[0] + obstacle_width, obs[1], GREY)
+            draw_dda_line(obs[0], obs[1], obs[0], obs[1] + obstacle_height, GREY)
+            draw_dda_line(obs[0] + obstacle_width, obs[1], obs[0] + obstacle_width, obs[1] + obstacle_height, GREY)
+            draw_dda_line(obs[0], obs[1] + obstacle_height, obs[0] + obstacle_width, obs[1] + obstacle_height, GREY)
             
-            # Move box randomly, but place in a corner every 8th change
-            if color_change_count % 8 == 0:
-                corners = [(0, 0), (WIDTH - 150, 0), (0, HEIGHT - 150), (WIDTH - 150, HEIGHT - 150)]
-                x, y = random.choice(corners)
-            else:
-                x, y = get_random_position()
+            # Check collision
+            if obs[0] < ball_x + ball_radius and obs[0] + obstacle_width > ball_x - ball_radius:
+                if obs[1] < ball_y + ball_radius:
+                    game_over = True
+        
+        # Remove off-screen obstacles
+        obstacles = [obs for obs in obstacles if obs[0] > -obstacle_width]
 
-        # Draw the box with a matching border
-        pygame.draw.rect(screen, color, (x, y, 150, 150))
-        pygame.draw.rect(screen, color, (x, y, 150, 150), 5)  # Border
+        # Display scoreboard
+        draw_text(f"Time Survived: {score} sec", 20, 20)  
 
-        # Display instructions and score
-        draw_text("Press Space to change color", 20, 20, WHITE)
-        draw_text(f"Score: {score}", WIDTH - 150, 20, WHITE)
-
-        # Update the display
         pygame.display.flip()
-
-    # Show game over screen
+        clock.tick(30)
+    
+    # Game over screen
     screen.fill((0, 0, 0))
     draw_text("Game Over", WIDTH // 2 - 80, HEIGHT // 2 - 20)
-    draw_text(f"Final Score: {score}", WIDTH // 2 - 90, HEIGHT // 2 + 20)
+    draw_text(f"Final Score: {score} sec", WIDTH // 2 - 100, HEIGHT // 2 + 20)
     pygame.display.flip()
-
-    # Wait for player to quit
     pygame.time.delay(3000)
     pygame.quit()
     sys.exit()
